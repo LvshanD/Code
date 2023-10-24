@@ -1,0 +1,22 @@
+function [T,w_row,vector] = TDPCA(corr_3d_train,row)
+
+num = size(corr_3d_train,3);
+corr_3d_mean = mean(corr_3d_train,3);
+corr_3d_meaned = corr_3d_train - corr_3d_mean;
+covar_row = zeros(116,116);
+row_num = size(corr_3d_train,1);
+T = zeros(row_num,row,num);
+
+for i = 1:num
+    covar_row = (covar_row + corr_3d_meaned(:,:,i)'*corr_3d_meaned(:,:,i))/num;
+end
+val_row = zeros(116);
+[vector_row,val_row] = eig(covar_row); 
+w_row = vector_row(:,1:row);
+for i = 1:num
+    T(:,:,i) = corr_3d_train(:,:,i)*w_row;
+    
+end
+
+
+vector = val_row;
