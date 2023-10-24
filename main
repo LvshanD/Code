@@ -1,0 +1,121 @@
+% 滑动窗取连接矩阵，取平均，找特征，送入svm
+clear;
+clc;
+
+% 载入样本
+Funimg1 = load("shen_data.mat");
+Dataset = Funimg1.fin2_result;
+label = load("label_shen.mat");
+label =label.label;
+num_data = size(Dataset,1);
+% 定义参数
+p=116;%脑区数量
+data_num = 101; %样本数量
+num_time_point = 118; %采样点数量
+opts=[];  % Lasso Feature selection
+opts.nFlag=0; % without normalization
+opts.rFlag=1;
+parameter_ttest = [0.01 0.05]; %定义T检验参数
+parameter_svm = [-4 -3]; %定义svm参数
+power_pca = 0.90;%选取pca的能量
+new_corr_size = p*(p-1)/2; %取下三角元素的个数
+k = 6; % K折交叉验证
+max_acc = 0;
+indices_t = crossvalind('Kfold',52,k); 
+indices_f = crossvalind('Kfold',49,k);
+win_k1 = 0;
+win_k2 = 1;
+for k11 = 1:size(win_k1,2)
+    window_width = 20 + 10 * win_k1(k11); %滑动窗窗宽
+    for k12 = 1:size(win_k2,2)
+        window_step = 2 * win_k2(k12); %滑动步长
+        window_num = floor((num_time_point - window_width)/window_step + 1); %滑动窗数量
+        %定义中间矩阵的规模
+        corr_3d_data = zeros(p,p,window_num);
+        new_corr_3d_data = zeros(new_corr_size,window_num,num_data);
+        fft_data = zeros(window_num,new_corr_size,num_data);
+        for m = 1:num_data %m为样本编号
+            M_cell = Dataset(m);
+            M_temp = cell2mat(M_cell);
+            %第二层循环，获得滑动窗口的协方差矩阵
+            for w = 1:window_num %w为滑动窗编号
+                start = (w - 1) * 2 + 1 ;
+                off = start + window_width - 1;
+                M = M_temp(:,start:off);
+                corr_temp = corr(M');%返回的是矩阵每一列之间的相关系数
+                %获得所有连接矩阵
+                corr_3d_data(:,:,w) = corr_temp;
+            end 
+            new_corr_3d_data(:,:,m) = Lower_triangle(corr_3d_data,new_corr_size,window_num,p);
+            fft_data(:,:,m) = abs(fft(new_corr_3d_data(:,:,m)')); %fft返回矩阵每一列的快速傅里叶变换
+        end
+
+        %划分训练样本、测试样本
+        data_T = fft_data(:,:,1:52);
+        data_F = fft_data(:,:,53:101);
+        label_T = label(1:52); 
+        label_F = label(53:101);  
+        % 交叉验证
+
+        %参数设置
+        for k1=1:size(parameter_ttest,2)    
+            param_ttest = parameter_ttest(k1);
+            for k3=1:size(parameter_svm,2)
+                  param_svm =  2^parameter_svm(k3);
+                  for i = 1:k
+                        test_t = (indices_t==i);
+                        train_t = ~test_t;
+                        test_f = (indices_f==i);
+                        train_f = ~test_f;
+                        num_test_t = length(find(test_t==1));
+                        num_test_f = length(find(test_f==1));
+                        num_train_t = length(find(train_t==1));
+                        num_train_f = length(find(train_f==1));
+                        test = cat(3,data_T(:,:,test_t),data_F(:,:,test_f));
+                        train = cat(3,data_T(:,:,train_t),data_F(:,:,train_f));
+                        label_test = [label_T(test_t,1);label_F(test_f,1)];
+                        label_train = [label_T(train_t,1);label_F(train_f,1)];
+                        num_train = size(train,3); 
+                        num_test = size(test,3);
+                        [T,w_col,w_row] = BDPCA(train,power_pca);
+                        T_test = zeros(size(w_col,2),size(w_row,2),num_test);
+                        for m = 1:num_test
+                           T_test(:,:,m) = w_col'*test(:,:,m)*w_row;
+                        end
+                        %BDPCA处理完之后的
+                        %拉直
+                        T_train = reshape(T,size(w_row,2)*size(w_col,2),num_train);
+                        T_test = reshape(T_test,size(w_row,2)*size(w_col,2),num_test);
+                        %训练样本拉直后送入T检验选出特征
+
+                        [~,p_val] = ttest2(T_train(:,1:num_train_t)',T_train(:,(num_train_t+1):end)');
+                        [ordered_p,ind_p] = sort(p_val);
+                        mm = length(find(ordered_p < param_ttest));
+                        if mm == 0
+                            train_svm = T_train;
+                            test_svm = T_test;
+                        else
+                            train_svm = T_train(ind_p(1:mm),:);
+                            test_svm = T_test(ind_p(1:mm),:);
+                        end
+                        str = ['-t 0 -q -c ' num2str(param_svm)]; 
+                        model = svmtrain(label_train,train_svm',str);
+                        [model_lab, accuracy_test, score] = svmpredict(label_test,test_svm',model,'-q');
+                        accuracy_temp{i}=accuracy_test(1);
+                        model_temp{i} = model_lab; 
+                  end
+                  temp2 = mean(cell2mat(accuracy_temp));
+                  if temp2 > max_acc
+                      max_acc = temp2;
+                      opt_param_ttest = param_ttest;
+                      opt_param_svm = param_svm;      
+                  end
+
+            end
+        end
+
+    end
+end
+
+
+
