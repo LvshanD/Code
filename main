@@ -1,63 +1,53 @@
-% 滑动窗取连接矩阵，取平均，找特征，送入svm
 clear;
 clc;
 
-% 载入样本
 Funimg1 = load("shen_data.mat");
 Dataset = Funimg1.fin2_result;
 label = load("label_shen.mat");
 label =label.label;
 num_data = size(Dataset,1);
-% 定义参数
-p=116;%脑区数量
-data_num = 101; %样本数量
-num_time_point = 118; %采样点数量
+
+p=116;
+data_num = 101; 
+num_time_point = 118; 
 opts=[];  % Lasso Feature selection
 opts.nFlag=0; % without normalization
 opts.rFlag=1;
-parameter_ttest = [0.01 0.05]; %定义T检验参数
-parameter_svm = [-4 -3]; %定义svm参数
-power_pca = 0.90;%选取pca的能量
-new_corr_size = p*(p-1)/2; %取下三角元素的个数
-k = 10; % K折交叉验证
+parameter_ttest = [0.01 0.05]; 
+parameter_svm = [-4 -3]; 
+power_pca = 0.90;
+new_corr_size = p*(p-1)/2; 
+k = 10;
 max_acc = 0;
 indices_t = crossvalind('Kfold',52,k); 
 indices_f = crossvalind('Kfold',49,k);
 win_k1 = 0;
 win_k2 = 1;
 for k11 = 1:size(win_k1,2)
-    window_width = 20 + 10 * win_k1(k11); %滑动窗窗宽
+    window_width = 20 + 10 * win_k1(k11); 
     for k12 = 1:size(win_k2,2)
-        window_step = 2 * win_k2(k12); %滑动步长
-        window_num = floor((num_time_point - window_width)/window_step + 1); %滑动窗数量
-        %定义中间矩阵的规模
+        window_step = 2 * win_k2(k12); 
+        window_num = floor((num_time_point - window_width)/window_step + 1); 
         corr_3d_data = zeros(p,p,window_num);
         new_corr_3d_data = zeros(new_corr_size,window_num,num_data);
         fft_data = zeros(window_num,new_corr_size,num_data);
-        for m = 1:num_data %m为样本编号
+        for m = 1:num_data 
             M_cell = Dataset(m);
             M_temp = cell2mat(M_cell);
-            %第二层循环，获得滑动窗口的协方差矩阵
-            for w = 1:window_num %w为滑动窗编号
+            for w = 1:window_num 
                 start = (w - 1) * 2 + 1 ;
                 off = start + window_width - 1;
                 M = M_temp(:,start:off);
-                corr_temp = corr(M');%返回的是矩阵每一列之间的相关系数
-                %获得所有连接矩阵
+                corr_temp = corr(M');
                 corr_3d_data(:,:,w) = corr_temp;
             end 
             new_corr_3d_data(:,:,m) = Lower_triangle(corr_3d_data,new_corr_size,window_num,p);
-            fft_data(:,:,m) = abs(fft(new_corr_3d_data(:,:,m)')); %fft返回矩阵每一列的快速傅里叶变换
+            fft_data(:,:,m) = abs(fft(new_corr_3d_data(:,:,m)'));
         end
-
-        %划分训练样本、测试样本
         data_T = fft_data(:,:,1:52);
         data_F = fft_data(:,:,53:101);
         label_T = label(1:52); 
         label_F = label(53:101);  
-        % 交叉验证
-
-        %参数设置
         for k1=1:size(parameter_ttest,2)    
             param_ttest = parameter_ttest(k1);
             for k3=1:size(parameter_svm,2)
@@ -82,12 +72,8 @@ for k11 = 1:size(win_k1,2)
                         for m = 1:num_test
                            T_test(:,:,m) = w_col'*test(:,:,m)*w_row;
                         end
-                        %BDPCA处理完之后的
-                        %拉直
                         T_train = reshape(T,size(w_row,2)*size(w_col,2),num_train);
                         T_test = reshape(T_test,size(w_row,2)*size(w_col,2),num_test);
-                        %训练样本拉直后送入T检验选出特征
-
                         [~,p_val] = ttest2(T_train(:,1:num_train_t)',T_train(:,(num_train_t+1):end)');
                         [ordered_p,ind_p] = sort(p_val);
                         mm = length(find(ordered_p < param_ttest));
