@@ -18,22 +18,18 @@ end
 
 [vect_row,val_row] = eig(covar_row); 
 [vect_col,val_col] = eig(covar_col); 
-
-%重新排序
 [~,index_row] = sort(diag(val_row),'descend');
 [~,index_col] = sort(diag(val_col),'descend');
 vector_row = vect_row(:,index_row);
 vector_col = vect_col(:,index_col);
 value_row = val_row(index_row,index_row);
 value_col = val_col(index_col,index_col);
-% %定义能量来确定列数
 sum_val_row_temp = sum(diag(val_row));
 sum_val_col_temp = sum(diag(val_col));
 sum_val_row = sum_val_row_temp * power_pca;
 sum_val_col = sum_val_col_temp * power_pca;
 sum_row_temp = 0;
 sum_col_temp = 0;
-
 for i = 1 : num_row
     sum_row_temp = sum_row_temp + value_row(i,i);
     if sum_row_temp > sum_val_row
